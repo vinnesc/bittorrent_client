@@ -1,0 +1,17 @@
+{
+  "name": "bittorrent_client",
+  "version": "0.0.1",
+  "description": "BitTorrent client in Node.js",
+  "main": "index.js",
+  "repository": "https://github.com/vinnesc/bittorrent_client.git",
+  "author": "vinicius <viniciusescuderoinstituto@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "bencode": "^2.0.1",
+    "node": "^13.1.0"
+  }
+}
