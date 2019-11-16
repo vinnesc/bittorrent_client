@@ -6,11 +6,11 @@ const url = require('url');
 const TrackerClient = require('./tracker_client');
 
 const torretFileName = 'test.torrent';
-const torrentFile = fs.readFileSync(torretFileName);
+const torrent = fs.readFileSync(torretFileName);
 
-const parsedTorrent = bencode.decode(torrentFile);
+const parsedTorrent = bencode.decode(torrent);
 const announceUrl = url.parse(parsedTorrent.announce.toString('utf-8'));
-console.log(announceUrl);
+console.log(parsedTorrent);
 
-const client = new TrackerClient(announceUrl);
+const client = new TrackerClient(torrent, announceUrl.hostname, announceUrl.host);
 client.getPeers();

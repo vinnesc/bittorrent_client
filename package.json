@@ -13,5 +13,8 @@
   "dependencies": {
     "bencode": "^2.0.1",
     "node": "^13.1.0"
+  },
+  "devDependencies": {
+    "eslint": "^6.6.0"
   }
 }

@@ -62,3 +62,6 @@ typings/
 
 # torrent files
 *.torrent
+
+# linter
+.eslintrc*
