@@ -41,14 +41,13 @@ class TrackerClient {
         const magic_h = 0x417;
         const magic_l = 0x27101980;
         const connectAction = 0x0;
-        this.transactionId = crypto.randomBytes(4);
+        const transactionId = crypto.randomBytes(4);
+        this.transactionId = transactionId.readUInt32BE(0); // this will override old id, i guess it doesn't matter??
     
         buffer.writeUInt32BE(magic_h, 0);
         buffer.writeUInt32BE(magic_l, 4);
         buffer.writeUInt32BE(connectAction, 8);
-        this.transactionId.forEach((value, i) => {
-            buffer.writeUInt8(value, 12 + i);
-        })
+        transactionId.copy(buffer, 12);
     
         return buffer; 
     }
@@ -57,25 +56,25 @@ class TrackerClient {
         // See: http://www.bittorrent.org/beps/bep_0015.html
         const buffer = Buffer.allocUnsafe(98);
         const announceAction = 0x1;
-        this.transactionId = crypto.randomBytes(4); // this will override old id, i guess it doesn't matter??
+        const transactionId = crypto.randomBytes(4);
+        this.transactionId = transactionId.readUInt32BE(0); // this will override old id, i guess it doesn't matter??
         const infoHash = this._infoHash();
-        const peerId = this._getPeerId().toString();
+        const peerId = this._getPeerId();
         const key = crypto.randomBytes(4);
     
         buffer.writeBigInt64BE(this.connectionId, 0);   
         buffer.writeUInt32BE(announceAction, 8);
-        this.transactionId.forEach((value, i) => {
-            buffer.writeUInt8(value, 12 + i);
-        })
+        transactionId.copy(buffer, 12);
         infoHash.copy(buffer, 16);
         peerId.copy(buffer, 36);
-        buffer.writeBigInt64BE(0, 56); // downloaded
-        buffer.writeBigInt64BE(0, 64); // left
-        buffer.writeBigInt64BE(0, 72); // uploaded
+        // big ints in javascript are just numbers with 'n' appended to them
+        buffer.writeBigInt64BE(BigInt(0), 56); // downloaded
+        buffer.writeBigInt64BE(BigInt(0), 64); // left
+        buffer.writeBigInt64BE(BigInt(0), 72); // uploaded
         buffer.writeUInt32BE(0, 80); // event: none
         buffer.writeUInt32BE(0, 84); // ip address: default
         key.copy(buffer, 88);
-        buffer.writeUInt32BE(-1, 92); // num_want: default
+        buffer.writeInt32BE(-1, 92); // num_want: default
         buffer.writeUInt16BE(this.trackerPort, 96);
 
         return buffer; 
@@ -102,10 +101,13 @@ class TrackerClient {
             if (serverTransactionId != this.transactionId) {
                 // throw exception???
                 console.log("server transaction id doesn't match with client's");
+                console.log('received ', serverTransactionId);
+                console.log('got ', this.transactionId);
             }
 
             // save connection id for later
-            this.connectionId = response.readBigUInt64BE(4);
+            this.connectionId = response.readBigUInt64BE(8);
+            console.log('connection id ', this.connectionId);
             this._sendAnnounce();
         } else if (type == 0x1) {
             // Announce response
@@ -115,6 +117,7 @@ class TrackerClient {
     }
 
     // todo: merge send funcitons
+    // we should probably fire a timeout after sending the messages to later check if we got response
     _sendAnnounce() {
         const request = this._buildAnnounceRequest();
         this.socket.send(request, this.trackerPort, this.trackerUrl);

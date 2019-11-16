@@ -10,7 +10,6 @@ const torrent = fs.readFileSync(torretFileName);
 
 const parsedTorrent = bencode.decode(torrent);
 const announceUrl = url.parse(parsedTorrent.announce.toString('utf-8'));
-console.log(parsedTorrent);
 
-const client = new TrackerClient(torrent, announceUrl.hostname, announceUrl.host);
+const client = new TrackerClient(torrent, announceUrl.hostname, announceUrl.port);
 client.getPeers();
