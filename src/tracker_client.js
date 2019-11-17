@@ -1,7 +1,9 @@
+'use strict';
+
 const dgram = require('dgram');
 const Buffer = require('buffer').Buffer;
 const crypto = require('crypto');
-const bencode = require('bencode');
+const utils = require('./utils');
 
 class TrackerClient {
     constructor(torrent, trackerUrl, trackerPort) {
@@ -13,26 +15,6 @@ class TrackerClient {
         this.transactionId = null;
         this.connectionId = null;
         this.peerId = null;
-    }
-
-    // move this somewhere else??
-    _infoHash() {
-        const info = bencode.encode(bencode.decode(this.torrent).info); //todo: change this
-        
-        return crypto.createHash('sha1').update(info).digest();
-    }
-
-    // move this too??
-    _getPeerId() {
-        if (this.peerId == null) {
-            const id = crypto.randomBytes(20);
-            const name = Buffer.from(this.clientName);
-            name.copy(id, 0);
-            
-            this.peerId = id;
-        }
-        
-        return this.peerId;
     }
 
     _buildConnectRequest() {
@@ -58,8 +40,8 @@ class TrackerClient {
         const announceAction = 0x1;
         const transactionId = crypto.randomBytes(4);
         this.transactionId = transactionId.readUInt32BE(0); // this will override old id, i guess it doesn't matter??
-        const infoHash = this._infoHash();
-        const peerId = this._getPeerId();
+        const infoHash = utils.getInfoHash(this.torrent);
+        const peerId = utils.getPeerId(this.clientName);
         const key = crypto.randomBytes(4);
     
         buffer.writeBigInt64BE(this.connectionId, 0);   
@@ -69,7 +51,7 @@ class TrackerClient {
         peerId.copy(buffer, 36);
         // big ints in javascript are just numbers with 'n' appended to them
         buffer.writeBigInt64BE(BigInt(0), 56); // downloaded
-        buffer.writeBigInt64BE(BigInt(0), 64); // left
+        buffer.writeBigInt64BE(utils.getTorrentSize(this.torrent), 64); // todo: left
         buffer.writeBigInt64BE(BigInt(0), 72); // uploaded
         buffer.writeUInt32BE(0, 80); // event: none
         buffer.writeUInt32BE(0, 84); // ip address: default
@@ -110,7 +92,31 @@ class TrackerClient {
             console.log('connection id ', this.connectionId);
             this._sendAnnounce();
         } else if (type == 0x1) {
-            // Announce response
+            // announce response
+            const serverTransactionId = response.readUInt32BE(4);
+            if (serverTransactionId != this.transactionId) {
+                // throw exception???
+                console.log("server transaction id doesn't match with client's");
+                console.log('received ', serverTransactionId);
+                console.log('got ', this.transactionId);
+            }
+
+            const interval = response.readUInt32BE(8);
+            const leechers = response.readUInt32BE(12);
+            const seeders = response.readUInt32BE(16);
+            const peers = {};
+            console.log('number of peers ', leechers + seeders);
+
+            // todo: we have to return this through getpeeers()
+            for (let i = 20; i < response.length; i += 6) {
+                const ip_address = response.slice(i, i + 4).join('.');
+                const tcp_port = response.readUInt16BE(i + 4);
+
+                peers[ip_address] = tcp_port;
+                console.log('peer ip ', ip_address);
+                console.log('peer port ', tcp_port);
+            }
+
         } else {
             // Unknown
         }
