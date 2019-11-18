@@ -11,42 +11,34 @@ class TrackerClient {
         this.trackerUrl = trackerUrl;
         this.trackerPort = trackerPort;
         this.clientName = '-VC0001-'; //vinny client version 0001 see: http://www.bittorrent.org/beps/bep_0020.html
-        this.socket = null;
-        this.transactionId = null;
-        this.connectionId = null;
-        this.peerId = null;
     }
 
-    _buildConnectRequest() {
+    _buildConnectRequest(connectTransactionId) {
         // See: http://www.bittorrent.org/beps/bep_0015.html
-        const buffer = Buffer.allocUnsafe(16);
+        const buffer = Buffer.alloc(16);
         const magic_h = 0x417;
         const magic_l = 0x27101980;
         const connectAction = 0x0;
-        const transactionId = crypto.randomBytes(4);
-        this.transactionId = transactionId.readUInt32BE(0); // this will override old id, i guess it doesn't matter??
     
         buffer.writeUInt32BE(magic_h, 0);
         buffer.writeUInt32BE(magic_l, 4);
         buffer.writeUInt32BE(connectAction, 8);
-        transactionId.copy(buffer, 12);
+        connectTransactionId.copy(buffer, 12);
     
         return buffer; 
     }
 
-    _buildAnnounceRequest() {
+    _buildAnnounceRequest(announceTransactionId, connectionId) {
         // See: http://www.bittorrent.org/beps/bep_0015.html
-        const buffer = Buffer.allocUnsafe(98);
+        const buffer = Buffer.alloc(98);
         const announceAction = 0x1;
-        const transactionId = crypto.randomBytes(4);
-        this.transactionId = transactionId.readUInt32BE(0); // this will override old id, i guess it doesn't matter??
         const infoHash = utils.getInfoHash(this.torrent);
         const peerId = utils.getPeerId(this.clientName);
         const key = crypto.randomBytes(4);
-    
-        buffer.writeBigInt64BE(this.connectionId, 0);   
+        
+        connectionId.copy(buffer, 0); // no point on handling big ints
         buffer.writeUInt32BE(announceAction, 8);
-        transactionId.copy(buffer, 12);
+        announceTransactionId.copy(buffer, 12);
         infoHash.copy(buffer, 16);
         peerId.copy(buffer, 36);
         // big ints in javascript are just numbers with 'n' appended to them
@@ -62,83 +54,108 @@ class TrackerClient {
         return buffer; 
     }
 
-    _initSocket() {
-        this.socket = dgram.createSocket('udp4');
+    _parseConnectResponse(response, connectTransactionId) {
+        const serverTransactionId = response.slice(4, 8);
+        if (!serverTransactionId.equals(connectTransactionId)) {
+            // throw exception???
+            console.log("connect server transaction id doesn't match with client's");
+            console.log('received ', serverTransactionId);
+            console.log('got ', connectTransactionId);
+        }
 
-        this.socket.on('error', (err) => {
+        // save connection id for later
+        const connectionId = response.slice(8);
+        console.log('connection id ', connectionId);
+        
+        return connectionId;
+    }
+
+    _parseAnnounceResponse(response, announceTransactionId) {
+        // announce response
+        const serverTransactionId = response.slice(4, 8);
+        if (!serverTransactionId.equals(announceTransactionId)) {
+            // throw exception???
+            console.log("announce server transaction id doesn't match with client's");
+            console.log('received ', serverTransactionId);
+            console.log('got ', announceTransactionId);
+        }
+
+        const interval = response.readUInt32BE(8);
+        const leechers = response.readUInt32BE(12);
+        const seeders = response.readUInt32BE(16);
+        const peers = {};
+        console.log('number of peers ', leechers + seeders);
+
+        for (let i = 20; i < response.length; i += 6) {
+            const ip_address = response.slice(i, i + 4).join('.');
+            const tcp_port = response.readUInt16BE(i + 4);
+
+            peers[ip_address] = tcp_port;
+            console.log('peer ip ', ip_address);
+            console.log('peer port ', tcp_port);
+        }
+
+        return peers;
+    }
+    
+    _initSocket(callback) {
+        const socket = dgram.createSocket('udp4');
+        let connectTransactionId = null;
+        let announceTransactionId = null;
+
+        socket.on('error', (err) => {
             console.log(`socket error:\n${err.stack}`);
             this.socket.close();
         })
-        //ok so this is very weird and i don't even know if you should do it
-        this.socket.on('message', this._responseHandler.bind(this));
+        
+        connectTransactionId = this._sendConnect(socket);
+        // response handler
+        socket.on('message', (response) => {
+            console.log('response ', response);
+            const type = response.readUInt32BE(0);
+            if (type == 0x0) {
+                // connect response
+                if (connectTransactionId == null) {
+                    console.log('connect response received before connect request')
+                }
+                const connectionId = this._parseConnectResponse(response, connectTransactionId);
+                announceTransactionId = this._sendAnnounce(connectionId, socket);
+            } else if (type == 0x1) {
+                // announce response
+                if (announceTransactionId == null) {
+                    console.log('announce response received before connect response')
+                }
+                const peers = this._parseAnnounceResponse(response, announceTransactionId);
+                callback(peers);
+            } else {
+                // Unknown
+            }
+        });
+
+        return socket;
     }
 
-    _responseHandler(response) {
-        console.log('response ', response);
-        const type = response.readUInt32BE(0);
-
-        if (type == 0x0) {
-            // connect response
-            const serverTransactionId = response.readUInt32BE(4);
-            if (serverTransactionId != this.transactionId) {
-                // throw exception???
-                console.log("server transaction id doesn't match with client's");
-                console.log('received ', serverTransactionId);
-                console.log('got ', this.transactionId);
-            }
-
-            // save connection id for later
-            this.connectionId = response.readBigUInt64BE(8);
-            console.log('connection id ', this.connectionId);
-            this._sendAnnounce();
-        } else if (type == 0x1) {
-            // announce response
-            const serverTransactionId = response.readUInt32BE(4);
-            if (serverTransactionId != this.transactionId) {
-                // throw exception???
-                console.log("server transaction id doesn't match with client's");
-                console.log('received ', serverTransactionId);
-                console.log('got ', this.transactionId);
-            }
-
-            const interval = response.readUInt32BE(8);
-            const leechers = response.readUInt32BE(12);
-            const seeders = response.readUInt32BE(16);
-            const peers = {};
-            console.log('number of peers ', leechers + seeders);
-
-            // todo: we have to return this through getpeeers()
-            for (let i = 20; i < response.length; i += 6) {
-                const ip_address = response.slice(i, i + 4).join('.');
-                const tcp_port = response.readUInt16BE(i + 4);
-
-                peers[ip_address] = tcp_port;
-                console.log('peer ip ', ip_address);
-                console.log('peer port ', tcp_port);
-            }
-
-        } else {
-            // Unknown
-        }
-    }
-
-    // todo: merge send funcitons
     // we should probably fire a timeout after sending the messages to later check if we got response
-    _sendAnnounce() {
-        const request = this._buildAnnounceRequest();
-        this.socket.send(request, this.trackerPort, this.trackerUrl);
+    _sendAnnounce(connectionId, socket) {
+        const announceTransactionId = crypto.randomBytes(4);
+        const request = this._buildAnnounceRequest(announceTransactionId, connectionId);
+
+        socket.send(request, this.trackerPort, this.trackerUrl);
+        
+        return announceTransactionId;
     }
 
-    _sendConnect() {
-        const request = this._buildConnectRequest();
-        this.socket.send(request, this.trackerPort, this.trackerUrl);
+    _sendConnect(socket) {
+        const connectTransactionId = crypto.randomBytes(4);
+        const request = this._buildConnectRequest(connectTransactionId);
+
+        socket.send(request, this.trackerPort, this.trackerUrl);
+
+        return connectTransactionId;
     }
 
-    getPeers() {
-        if (this.socket === null) {
-            this._initSocket();
-            this._sendConnect();
-        }
+    getPeers(callback) {
+        this._initSocket(callback);
     }
 }
 

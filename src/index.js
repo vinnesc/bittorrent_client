@@ -13,4 +13,4 @@ console.log(parsedTorrent);
 const announceUrl = url.parse(parsedTorrent.announce.toString('utf-8'));
 
 const client = new TrackerClient(parsedTorrent, announceUrl.hostname, announceUrl.port);
-client.getPeers();
+client.getPeers((peers) => {console.log(peers)});
