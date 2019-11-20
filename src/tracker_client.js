@@ -6,11 +6,12 @@ const crypto = require('crypto');
 const utils = require('./utils');
 
 class TrackerClient {
-    constructor(torrent, trackerUrl, trackerPort) {
+    constructor(torrent, tracker, clientName, peerId) {
         this.torrent = torrent;
-        this.trackerUrl = trackerUrl;
-        this.trackerPort = trackerPort;
-        this.clientName = '-VC0001-'; //vinny client version 0001 see: http://www.bittorrent.org/beps/bep_0020.html
+        this.trackerUrl = tracker.hostname;
+        this.trackerPort = tracker.port;
+        this.clientName = clientName; // see: http://www.bittorrent.org/beps/bep_0020.html
+        this.peerId = peerId;
     }
 
     _buildConnectRequest(connectTransactionId) {
@@ -33,14 +34,13 @@ class TrackerClient {
         const buffer = Buffer.alloc(98);
         const announceAction = 0x1;
         const infoHash = utils.getInfoHash(this.torrent);
-        const peerId = utils.getPeerId(this.clientName);
         const key = crypto.randomBytes(4);
         
         connectionId.copy(buffer, 0); // no point on handling big ints
         buffer.writeUInt32BE(announceAction, 8);
         announceTransactionId.copy(buffer, 12);
         infoHash.copy(buffer, 16);
-        peerId.copy(buffer, 36);
+        this.peerId.copy(buffer, 36);
         // big ints in javascript are just numbers with 'n' appended to them
         buffer.writeBigInt64BE(BigInt(0), 56); // downloaded
         buffer.writeBigInt64BE(utils.getTorrentSize(this.torrent), 64); // todo: left
@@ -83,16 +83,16 @@ class TrackerClient {
         const interval = response.readUInt32BE(8);
         const leechers = response.readUInt32BE(12);
         const seeders = response.readUInt32BE(16);
-        const peers = {};
+        const peers = [];
         console.log('number of peers ', leechers + seeders);
 
         for (let i = 20; i < response.length; i += 6) {
-            const ip_address = response.slice(i, i + 4).join('.');
-            const tcp_port = response.readUInt16BE(i + 4);
+            const ip = response.slice(i, i + 4).join('.');
+            const port = response.readUInt16BE(i + 4);
 
-            peers[ip_address] = tcp_port;
-            console.log('peer ip ', ip_address);
-            console.log('peer port ', tcp_port);
+            peers.push({ip, port});
+            console.log('peer ip ', ip);
+            console.log('peer port ', port);
         }
 
         return peers;

@@ -4,13 +4,21 @@ const fs = require('fs');
 const bencode = require('bencode');
 const url = require('url');
 const TrackerClient = require('./tracker_client');
+const download = require('./downloader')
+const utils = require('./utils');
 
 const torretFileName = 'test.torrent';
 const torrent = fs.readFileSync(torretFileName);
 
-const parsedTorrent = bencode.decode(torrent);
-console.log(parsedTorrent);
-const announceUrl = url.parse(parsedTorrent.announce.toString('utf-8'));
+/* Move parsing logic somewhere else */
+const decodedTorrent = bencode.decode(torrent);
+console.log(decodedTorrent);
+const announceUrl = url.parse(decodedTorrent.announce.toString('utf-8'));
 
-const client = new TrackerClient(parsedTorrent, announceUrl.hostname, announceUrl.port);
-client.getPeers((peers) => {console.log(peers)});
+const clientName = '-VC0001-';
+const peerId = utils.getPeerId(clientName);
+const client = new TrackerClient(decodedTorrent, announceUrl, clientName, peerId);
+
+client.getPeers((peers) => {
+    download(decodedTorrent, peerId, peers);
+});
