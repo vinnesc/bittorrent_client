@@ -1,21 +1,25 @@
 "use strict";
 
+const fs = require("fs");
 const net = require("net");
 const Buffer = require("buffer").Buffer;
 const utils = require("./utils");
-const Pieces = require("./pieces");
 const Tracker = require("./tracker_client");
+const Pieces = require("./pieces");
+const Queue = require("./queue");
 
 // peers is an array of objects with ip and port
-module.exports = torrent => {
+module.exports = (torrent, path) => {
   const clientName = "-VC0001-";
   const peerId = utils.getPeerId(clientName);
   const tracker = new Tracker(torrent, clientName, peerId);
 
   tracker.getPeers(peers => {
-    const pieces = new Pieces(torrent.info.pieces.length / 20); // 20 bytes hashes
+    const pieces = new Pieces(torrent); // 20 bytes hashes
+    const file = fs.openSync(path, "w");
+
     peers.forEach(peer => {
-      download(torrent, peerId, peer);
+      download(torrent, peerId, peer, pieces, file);
     });
   });
 };
@@ -175,7 +179,14 @@ function bufferPackets(socket, callback) {
   });
 }
 
-function messageHandler(message, socket, requestedPieces, queue) {
+function messageHandler(
+  message,
+  socket,
+  requestedPieces,
+  queue,
+  torrent,
+  file
+) {
   if (utils.isHandshake(message)) {
     const interested = buildInterested();
     socket.write(interested);
@@ -196,25 +207,51 @@ function messageHandler(message, socket, requestedPieces, queue) {
       }
       case 4: {
         // have
-        const index = message.readUInt32BE(0);
-        queue.push(index);
-
-        if (queue.length == 1) {
+        const pieceIndex = parsedMessage.payload.readUInt32BE(0);
+        const queueEmpty = queue.length == 0;
+        queue.queue(pieceIndex);
+        if (queueEmpty) {
           askForPiece(socket, requestedPieces, queue);
         }
-        if (!requestedPieces[index]) {
-          socket.write(message.buildRequest());
-        }
-        requestedPieces[index] = true;
         break;
       }
       case 5: {
+        // bitfield
+        const queueEmpty = queue.length === 0;
+        parsedMessage.payload.forEach((byte, i) => {
+          for (let j = 0; j < 8; j++) {
+            if (byte % 2) queue.queue(i * 8 + 7 - j);
+            byte = Math.floor(byte / 2);
+          }
+        });
+        if (queueEmpty) {
+          askForPiece(socket, requestedPieces, queue);
+        }
         break;
       }
       case 7: {
         // piece
-        queue.shift();
-        askForPiece(socket, requestedPieces, queue);
+        requestedPieces.printPercentDone();
+        requestedPieces.addReceived(parsedMessage.payload);
+
+        const offset =
+          parsedMessage.payload.index * torrent.info["piece length"] +
+          parsedMessage.payload.begin;
+        fs.write(
+          file,
+          parsedMessage.payload.block,
+          0,
+          parsedMessage.payload.block.length,
+          offset,
+          () => {}
+        );
+
+        if (requestedPieces.isDone()) {
+          socket.end();
+          console.log("DONE!");
+        } else {
+          askForPiece(socket, requestedPieces, queue);
+        }
         break;
       }
     }
@@ -226,11 +263,11 @@ function askForPiece(socket, requestedPieces, queue) {
     return null;
   }
 
-  while (queue.queue.length) {
-    const pieceIndex = queue.shift();
-    if (requestedPieces.needed(pieceIndex)) {
-      socket.write(message.buildRequest(pieceIndex));
-      requestedPieces.addRequested(pieceIndex);
+  while (queue.length()) {
+    const pieceBlock = queue.deque();
+    if (requestedPieces.needed(pieceBlock)) {
+      socket.write(buildRequest(pieceBlock));
+      requestedPieces.addRequested(pieceBlock);
       break;
     }
   }
@@ -258,7 +295,7 @@ function parseMessage(message) {
   };
 }
 
-function download(torrent, peerId, peer, requestedPieces) {
+function download(torrent, peerId, peer, requestedPieces, file) {
   const socket = net.connect(peer.port, peer.ip, () => {
     const handshake = buildHandshake(torrent, peerId);
     socket.write(handshake);
@@ -269,8 +306,8 @@ function download(torrent, peerId, peer, requestedPieces) {
     socket.end();
   });
 
-  const queue = { chocked: true, queue: [] };
+  const queue = new Queue(torrent);
   bufferPackets(socket, message =>
-    messageHandler(message, socket, requestedPieces, queue)
+    messageHandler(message, socket, requestedPieces, queue, torrent, file)
   );
 }

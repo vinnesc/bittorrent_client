@@ -2,7 +2,7 @@
 
 const fs = require("fs");
 const bencode = require("bencode");
-const bignum = require("bignum");
+const utils = require("./utils");
 
 module.exports.BLOCK_LEN = Math.pow(2, 14);
 
@@ -11,8 +11,8 @@ module.exports.open = filepath => {
 };
 
 module.exports.pieceLen = (torrent, pieceIndex) => {
-  const totalLength = bignum.fromBuffer(this.size(torrent)).toNumber();
-  const pieceLength = torrent.info["piece length"];
+  const totalLength = Number(BigInt(utils.getTorrentSize(torrent)));
+  const pieceLength = Number(BigInt(torrent.info["piece length"]));
 
   const lastPieceLength = totalLength % pieceLength;
   const lastPieceIndex = Math.floor(totalLength / pieceLength);

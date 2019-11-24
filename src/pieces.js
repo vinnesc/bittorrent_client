@@ -1,27 +1,54 @@
 "use strict";
 
+const parser = require("./parser");
+
 module.exports = class {
-  constructor(size) {
-    this.requested = new Array(size).fill(false);
-    this.received = new Array(size).fill(false);
-  }
-
-  addRequested(pieceIndex) {
-    this.requested[pieceIndex] = true;
-  }
-
-  addReceived(pieceIndex) {
-    this.received[pieceIndex] = true;
-  }
-
-  needed(pieceIndex) {
-    if (this.requested.every(i => i === true)) {
-      this.requested = this.received.slice();
+  constructor(torrent) {
+    function buildPiecesArray() {
+      const nPieces = torrent.info.pieces.length / 20;
+      const arr = new Array(nPieces).fill(null);
+      return arr.map((_, i) =>
+        new Array(parser.blocksPerPiece(torrent, i)).fill(false)
+      );
     }
-    return !this.requested[pieceIndex];
+
+    this._requested = buildPiecesArray();
+    this._received = buildPiecesArray();
+  }
+
+  addRequested(pieceBlock) {
+    const blockIndex = pieceBlock.begin / parser.BLOCK_LEN;
+    this._requested[pieceBlock.index][blockIndex] = true;
+  }
+
+  addReceived(pieceBlock) {
+    const blockIndex = pieceBlock.begin / parser.BLOCK_LEN;
+    this._received[pieceBlock.index][blockIndex] = true;
+  }
+
+  needed(pieceBlock) {
+    if (this._requested.every(blocks => blocks.every(i => i))) {
+      this._requested = this._received.map(blocks => blocks.slice());
+    }
+    const blockIndex = pieceBlock.begin / parser.BLOCK_LEN;
+    return !this._requested[pieceBlock.index][blockIndex];
   }
 
   isDone() {
-    return this.received.every(i => i === true);
+    return this._received.every(blocks => blocks.every(i => i));
+  }
+
+  printPercentDone() {
+    const downloaded = this._received.reduce((totalBlocks, blocks) => {
+      return blocks.filter(i => i).length + totalBlocks;
+    }, 0);
+
+    const total = this._received.reduce((totalBlocks, blocks) => {
+      return blocks.length + totalBlocks;
+    }, 0);
+
+    const percent = Math.floor((downloaded / total) * 100);
+
+    process.stdout.write("progress: " + percent + "%\r");
   }
 };

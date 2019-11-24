@@ -32,7 +32,6 @@ module.exports.getTorrentSize = decodedTorrent => {
     size = BigInt(decodedTorrent.info.length);
   }
 
-  console.log("size of torrent ", size);
   return size;
 };
 
