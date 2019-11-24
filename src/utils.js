@@ -35,3 +35,10 @@ module.exports.getTorrentSize = decodedTorrent => {
   console.log("size of torrent ", size);
   return size;
 };
+
+module.exports.isHandshake = message => {
+  return (
+    message.length === message.readUInt8(0) + 49 &&
+    message.toString("utf8", 1) === "BitTorrent protocol"
+  );
+};

@@ -7,13 +7,14 @@ const TrackerClient = require("./tracker_client");
 const download = require("./downloader");
 const utils = require("./utils");
 
-const torretFileName = "test.torrent";
+const torretFileName = "test_2.torrent";
 const torrent = fs.readFileSync(torretFileName);
 
 /* Move parsing logic somewhere else */
 const decodedTorrent = bencode.decode(torrent);
 console.log(decodedTorrent);
 const announceUrl = url.parse(decodedTorrent.announce.toString("utf-8"));
+console.log(announceUrl);
 
 const clientName = "-VC0001-";
 const peerId = utils.getPeerId(clientName);

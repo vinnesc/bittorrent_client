@@ -4,6 +4,7 @@ const dgram = require("dgram");
 const Buffer = require("buffer").Buffer;
 const crypto = require("crypto");
 const utils = require("./utils");
+const url = require("url");
 
 class TrackerClient {
   constructor(torrent, tracker, clientName, peerId) {
@@ -12,6 +13,8 @@ class TrackerClient {
     this.trackerPort = tracker.port;
     this.clientName = clientName; // see: http://www.bittorrent.org/beps/bep_0020.html
     this.peerId = peerId;
+    this.connected = false;
+    this.currentTracker = 0;
   }
 
   _buildConnectRequest(connectTransactionId) {
@@ -109,6 +112,15 @@ class TrackerClient {
     });
 
     connectTransactionId = this._sendConnect(socket);
+
+    if (!this.connected) {
+      setTimeout(() => {
+        if (!this.connected) {
+          this._tryNewTracker();
+          this._initSocket(callback);
+        }
+      }, 3000);
+    }
     // response handler
     socket.on("message", response => {
       console.log("response ", response);
@@ -118,6 +130,8 @@ class TrackerClient {
         if (connectTransactionId == null) {
           console.log("connect response received before connect request");
         }
+
+        this.connected = true;
         const connectionId = this._parseConnectResponse(
           response,
           connectTransactionId
@@ -141,6 +155,25 @@ class TrackerClient {
     return socket;
   }
 
+  _tryNewTracker() {
+    if (this.connected) {
+      return;
+    }
+    console.log("trying new tracker ");
+    const list = this.torrent["announce-list"];
+
+    if (this.currentTracker < list.length) {
+      const newTrackerUrl = url.parse(
+        list[this.currentTracker].toString("utf-8")
+      );
+      this.trackerPort = newTrackerUrl.port;
+      this.trackerUrl = newTrackerUrl.hostname;
+
+      this.currentTracker++;
+    } else {
+      // throw exception
+    }
+  }
   // we should probably fire a timeout after sending the messages to later check if we got response
   _sendAnnounce(connectionId, socket) {
     const announceTransactionId = crypto.randomBytes(4);
@@ -150,7 +183,7 @@ class TrackerClient {
     );
 
     socket.send(request, this.trackerPort, this.trackerUrl);
-
+    console.log("sent announce message");
     return announceTransactionId;
   }
 
@@ -159,6 +192,7 @@ class TrackerClient {
     const request = this._buildConnectRequest(connectTransactionId);
 
     socket.send(request, this.trackerPort, this.trackerUrl);
+    console.log("sent connect message");
 
     return connectTransactionId;
   }
