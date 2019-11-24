@@ -46,8 +46,8 @@ function buildHandshake(torrent, peerId) {
 /*
   Every message that follows starts with lenght and id.
 */
-
 function buildInterested() {
+  // see https://wiki.theory.org/index.php/BitTorrentSpecification#Handshake
   const buffer = Buffer.alloc(5);
 
   buffer.writeUInt32BE(1, 0);
@@ -57,6 +57,7 @@ function buildInterested() {
 }
 
 function buildRequest(piece) {
+  // see https://wiki.theory.org/index.php/BitTorrentSpecification#Handshake
   const buffer = Buffer.alloc(17);
 
   buffer.writeUInt32BE(13, 0);
@@ -74,11 +75,14 @@ function getMessageLength(handshake, buffer) {
   return handshake ? buffer.readUInt8(0) + 49 : buffer.readInt32BE(0) + 4;
 }
 
+// buffer every packet until we have a complete one
+//
 function bufferPackets(socket, callback) {
   let buffer = Buffer.alloc(0);
   let handshake = true;
 
   socket.on("data", data => {
+    // put messages on the buffer and call message handler with very message
     buffer = Buffer.concat([buffer, data]);
 
     while (
@@ -105,7 +109,7 @@ function messageHandler(
     socket.write(interested);
   } else {
     const parsedMessage = parseMessage(message);
-
+    const payload = parsedMessage.payload;
     switch (parsedMessage.id) {
       case 0: {
         //choke
@@ -120,9 +124,13 @@ function messageHandler(
       }
       case 4: {
         // have
-        const pieceIndex = parsedMessage.payload.readUInt32BE(0);
+        // we enqueue this requests and ask for the piece
+        const pieceIndex = payload.readUInt32BE(0);
         const queueEmpty = queue.length() === 0;
         queue.queue(pieceIndex);
+
+        // if queue was empty before queueing, we have the right of asking for it
+        // we don't ask otherwise because we want to wait for pieces before asking new ones
         if (queueEmpty) {
           askForPiece(socket, requestedPieces, queue);
         }
@@ -131,7 +139,7 @@ function messageHandler(
       case 5: {
         // bitfield
         const queueEmpty = queue.length() === 0;
-        parsedMessage.payload.forEach((byte, i) => {
+        payload.forEach((byte, i) => {
           for (let j = 0; j < 8; j++) {
             if (byte % 2) queue.queue(i * 8 + 7 - j);
             byte = Math.floor(byte / 2);
@@ -145,16 +153,15 @@ function messageHandler(
       case 7: {
         // piece
         requestedPieces.printPercentDone();
-        requestedPieces.addReceived(parsedMessage.payload);
+        requestedPieces.addReceived(payload);
 
         const offset =
-          parsedMessage.payload.index * torrent.info["piece length"] +
-          parsedMessage.payload.begin;
+          payload.index * torrent.info["piece length"] + payload.begin;
         fs.write(
           file,
-          parsedMessage.payload.block,
+          payload.block,
           0,
-          parsedMessage.payload.block.length,
+          payload.block.length,
           offset,
           () => {}
         );

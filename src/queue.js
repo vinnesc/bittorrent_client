@@ -2,6 +2,7 @@
 
 const parser = require("./parser");
 
+// this queue stores the blocks for pieces indexes
 module.exports = class {
   constructor(torrent) {
     this._torrent = torrent;

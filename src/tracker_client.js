@@ -61,7 +61,7 @@ class TrackerClient {
   _parseConnectResponse(response, connectTransactionId) {
     const serverTransactionId = response.slice(4, 8);
     if (!serverTransactionId.equals(connectTransactionId)) {
-      // throw exception???
+      // TODO: throw exception
       console.log("connect server transaction id doesn't match with client's");
       console.log("received ", serverTransactionId);
       console.log("got ", connectTransactionId);
@@ -78,7 +78,7 @@ class TrackerClient {
     // announce response
     const serverTransactionId = response.slice(4, 8);
     if (!serverTransactionId.equals(announceTransactionId)) {
-      // throw exception???
+      // TODO: throw exception
       console.log("announce server transaction id doesn't match with client's");
       console.log("received ", serverTransactionId);
       console.log("got ", announceTransactionId);
@@ -91,7 +91,7 @@ class TrackerClient {
     console.log("number of peers ", leechers + seeders);
 
     for (let i = 20; i < response.length; i += 6) {
-      const ip = response.slice(i, i + 4).join(".");
+      const ip = response.slice(i, i + 4).join("."); // still don't know why this works
       const port = response.readUInt16BE(i + 4);
 
       peers.push({ ip, port });
@@ -102,6 +102,9 @@ class TrackerClient {
     return peers;
   }
 
+  // create the socket and send connect and announce messages
+  // if tracker didn't response try next one
+  // create and announce can get lost, they are UDP
   _initSocket(callback) {
     const socket = dgram.createSocket("udp4");
     let connectTransactionId = null;
@@ -129,9 +132,10 @@ class TrackerClient {
       if (type == 0x0) {
         // connect response
         if (connectTransactionId == null) {
+          // TODO: should never happen so just restart
           console.log("connect response received before connect request");
         }
-
+        // don't try a new announcer
         this.connected = true;
         const connectionId = this._parseConnectResponse(
           response,
@@ -141,6 +145,7 @@ class TrackerClient {
       } else if (type == 0x1) {
         // announce response
         if (announceTransactionId == null) {
+          // TODO: should never happen so just restart
           console.log("announce response received before connect response");
         }
         const peers = this._parseAnnounceResponse(
@@ -175,7 +180,7 @@ class TrackerClient {
       // throw exception
     }
   }
-  // we should probably fire a timeout after sending the messages to later check if we got response
+  // TODO: we should probably fire a timeout after sending the messages to later check if we got response
   _sendAnnounce(connectionId, socket) {
     const announceTransactionId = crypto.randomBytes(4);
     const request = this._buildAnnounceRequest(
@@ -188,6 +193,7 @@ class TrackerClient {
     return announceTransactionId;
   }
 
+  // TODO: we should probably fire a timeout after sending the messages to later check if we got response
   _sendConnect(socket) {
     const connectTransactionId = crypto.randomBytes(4);
     const request = this._buildConnectRequest(connectTransactionId);
