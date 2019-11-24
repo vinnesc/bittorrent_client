@@ -5,7 +5,7 @@ const parser = require("./parser");
 module.exports = class {
   constructor(torrent) {
     function buildPiecesArray() {
-      const nPieces = torrent.info.pieces.length / 20;
+      const nPieces = torrent.info.pieces.length / 20; // 20 bytes hashes
       const arr = new Array(nPieces).fill(null);
       return arr.map((_, i) =>
         new Array(parser.blocksPerPiece(torrent, i)).fill(false)

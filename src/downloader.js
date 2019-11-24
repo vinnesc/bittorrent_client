@@ -8,14 +8,13 @@ const Tracker = require("./tracker_client");
 const Pieces = require("./pieces");
 const Queue = require("./queue");
 
-// peers is an array of objects with ip and port
 module.exports = (torrent, path) => {
   const clientName = "-VC0001-";
   const peerId = utils.getPeerId(clientName);
   const tracker = new Tracker(torrent, clientName, peerId);
 
   tracker.getPeers(peers => {
-    const pieces = new Pieces(torrent); // 20 bytes hashes
+    const pieces = new Pieces(torrent);
     const file = fs.openSync(path, "w");
 
     peers.forEach(peer => {
@@ -44,31 +43,9 @@ function buildHandshake(torrent, peerId) {
   return buffer;
 }
 
-function buildKeepAlive() {
-  return Buffer.alloc(4);
-}
-
 /*
   Every message that follows starts with lenght and id.
 */
-
-function buildChoke() {
-  const buffer = Buffer.alloc(5);
-
-  buffer.writeUInt32BE(1, 0);
-  buffer.writeUInt8(0, 4);
-
-  return buffer;
-}
-
-function buildUnchoke() {
-  const buffer = Buffer.alloc(5);
-
-  buffer.writeUInt32BE(1, 0);
-  buffer.writeUInt8(1, 4);
-
-  return buffer;
-}
 
 function buildInterested() {
   const buffer = Buffer.alloc(5);
@@ -76,35 +53,6 @@ function buildInterested() {
   buffer.writeUInt32BE(1, 0);
   buffer.writeUInt8(2, 4);
 
-  return buffer;
-}
-
-function buildUninterested() {
-  const buffer = Buffer.alloc(5);
-
-  buffer.writeUInt32BE(1, 0);
-  buffer.writeUInt8(3, 4);
-
-  return buffer;
-}
-
-function buildHave(piece) {
-  const buffer = Buffer.alloc(9);
-
-  buffer.writeUInt32BE(5, 0);
-  buffer.writeUInt8(4, 4);
-  buffer.writeUInt32BE(piece, 5); //piece index
-
-  return buffer;
-}
-
-function buildBitfield(piece, bitfield) {
-  const buffer = Buffer.alloc(14);
-
-  buffer.writeUInt32BE(piece.length + 1, 0);
-  buffer.writeUInt8(5, 4);
-
-  bitfield.copy(buffer, 5);
   return buffer;
 }
 
@@ -117,40 +65,6 @@ function buildRequest(piece) {
   buffer.writeUInt32BE(piece.index, 5);
   buffer.writeUInt32BE(piece.begin, 9);
   buffer.writeUInt32BE(piece.length, 13);
-  return buffer;
-}
-
-function buildPiece(piece) {
-  const buffer = Buffer.alloc(piece.block.length + 13);
-
-  buffer.writeUInt32BE(piece.block.length + 9, 0);
-  buffer.writeUInt8(7, 4);
-  buffer.writeUInt32BE(piece.index, 5);
-  buffer.writeUInt32BE(piece.begin, 9);
-  piece.block.copy(buffer, 13);
-
-  return buffer;
-}
-
-function buildCancel(piece) {
-  const buffer = Buffer.alloc(17);
-
-  buffer.writeUInt32BE(13, 0);
-  buffer.writeUInt8(8, 4);
-  buffer.writeUInt32BE(piece.index, 5);
-  buffer.writeUInt32BE(piece.begin, 9);
-  buffer.writeUInt32BE(piece.length, 13);
-
-  return buffer;
-}
-
-function buildPort(port) {
-  const buffer = Buffer.alloc(7);
-
-  buffer.writeUInt32BE(3, 0);
-  buffer.writeUInt8(9, 4);
-  buffer.writeUInt16BE(port, 5);
-
   return buffer;
 }
 
