@@ -3,11 +3,20 @@
 const net = require("net");
 const Buffer = require("buffer").Buffer;
 const utils = require("./utils");
+const Pieces = require("./pieces");
+const Tracker = require("./tracker_client");
 
 // peers is an array of objects with ip and port
-module.exports = (torrent, peerId, peers) => {
-  peers.forEach(peer => {
-    download(torrent, peerId, peer);
+module.exports = torrent => {
+  const clientName = "-VC0001-";
+  const peerId = utils.getPeerId(clientName);
+  const tracker = new Tracker(torrent, clientName, peerId);
+
+  tracker.getPeers(peers => {
+    const pieces = new Pieces(torrent.info.pieces.length / 20); // 20 bytes hashes
+    peers.forEach(peer => {
+      download(torrent, peerId, peer);
+    });
   });
 };
 
@@ -166,7 +175,7 @@ function bufferPackets(socket, callback) {
   });
 }
 
-function messageHandler(message, socket) {
+function messageHandler(message, socket, requestedPieces, queue) {
   if (utils.isHandshake(message)) {
     const interested = buildInterested();
     socket.write(interested);
@@ -175,20 +184,54 @@ function messageHandler(message, socket) {
 
     switch (parsedMessage.id) {
       case 0: {
+        //choke
+        socket.end();
         break;
       }
       case 1: {
+        //unchoke
+        queue.chocked = false;
+        askForPiece(socket, requestedPieces, queue);
         break;
       }
       case 4: {
+        // have
+        const index = message.readUInt32BE(0);
+        queue.push(index);
+
+        if (queue.length == 1) {
+          askForPiece(socket, requestedPieces, queue);
+        }
+        if (!requestedPieces[index]) {
+          socket.write(message.buildRequest());
+        }
+        requestedPieces[index] = true;
         break;
       }
       case 5: {
         break;
       }
       case 7: {
+        // piece
+        queue.shift();
+        askForPiece(socket, requestedPieces, queue);
         break;
       }
+    }
+  }
+}
+
+function askForPiece(socket, requestedPieces, queue) {
+  if (queue.choked) {
+    return null;
+  }
+
+  while (queue.queue.length) {
+    const pieceIndex = queue.shift();
+    if (requestedPieces.needed(pieceIndex)) {
+      socket.write(message.buildRequest(pieceIndex));
+      requestedPieces.addRequested(pieceIndex);
+      break;
     }
   }
 }
@@ -215,7 +258,7 @@ function parseMessage(message) {
   };
 }
 
-function download(torrent, peerId, peer) {
+function download(torrent, peerId, peer, requestedPieces) {
   const socket = net.connect(peer.port, peer.ip, () => {
     const handshake = buildHandshake(torrent, peerId);
     socket.write(handshake);
@@ -226,5 +269,8 @@ function download(torrent, peerId, peer) {
     socket.end();
   });
 
-  bufferPackets(socket, message => messageHandler(message, socket));
+  const queue = { chocked: true, queue: [] };
+  bufferPackets(socket, message =>
+    messageHandler(message, socket, requestedPieces, queue)
+  );
 }

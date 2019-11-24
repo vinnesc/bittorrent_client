@@ -7,10 +7,11 @@ const utils = require("./utils");
 const url = require("url");
 
 class TrackerClient {
-  constructor(torrent, tracker, clientName, peerId) {
+  constructor(torrent, clientName, peerId) {
+    const trackerUrl = url.parse(torrent.announce.toString("utf-8"));
     this.torrent = torrent;
-    this.trackerUrl = tracker.hostname;
-    this.trackerPort = tracker.port;
+    this.trackerUrl = trackerUrl.hostname;
+    this.trackerPort = trackerUrl.port;
     this.clientName = clientName; // see: http://www.bittorrent.org/beps/bep_0020.html
     this.peerId = peerId;
     this.connected = false;
