@@ -25,7 +25,6 @@ module.exports = (torrent, path) => {
 };
 
 function buildHandshake(torrent, peerId) {
-  console.log("build handshake");
   // see https://wiki.theory.org/index.php/BitTorrentSpecification#Handshake
   const buffer = Buffer.alloc(68);
   const protocol = "BitTorrent protocol";
@@ -208,7 +207,7 @@ function messageHandler(
       case 4: {
         // have
         const pieceIndex = parsedMessage.payload.readUInt32BE(0);
-        const queueEmpty = queue.length == 0;
+        const queueEmpty = queue.length() === 0;
         queue.queue(pieceIndex);
         if (queueEmpty) {
           askForPiece(socket, requestedPieces, queue);
@@ -217,7 +216,7 @@ function messageHandler(
       }
       case 5: {
         // bitfield
-        const queueEmpty = queue.length === 0;
+        const queueEmpty = queue.length() === 0;
         parsedMessage.payload.forEach((byte, i) => {
           for (let j = 0; j < 8; j++) {
             if (byte % 2) queue.queue(i * 8 + 7 - j);
@@ -249,6 +248,9 @@ function messageHandler(
         if (requestedPieces.isDone()) {
           socket.end();
           console.log("DONE!");
+          try {
+            fs.closeSync(file);
+          } catch (e) {}
         } else {
           askForPiece(socket, requestedPieces, queue);
         }
@@ -302,7 +304,6 @@ function download(torrent, peerId, peer, requestedPieces, file) {
   });
 
   socket.on("error", err => {
-    console.log(err);
     socket.end();
   });
 
